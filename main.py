@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- CONFIGURATION ---
 ACCOUNT_NAME = "bemolfarma"
-VTEX_COOKIE = os.getenv("VTEX_COOKIE", "COLE_SEU_COOKIE_AQUI")
+VTEX_COOKIE = os.getenv("VTEX_COOKIE", "PASTE_YOUR_COOKIE_HERE")
 
 # URLs
 BASE_URL = f"https://{ACCOUNT_NAME}.vtexcommercestable.com.br/api/catalog/pvt"
@@ -29,28 +29,28 @@ HEADERS = {
     "Accept": "application/json"
 }
 
-# --- CONFIGURAÇÕES DE PERFORMANCE E SEGURANÇA ---
-MAX_WORKERS = 3  # Threads paralelas (ajuste conforme necessário)
-REQUEST_TIMEOUT = 30  # Timeout em segundos
-MAX_RETRIES = 3  # Tentativas de retry
-BACKOFF_FACTOR = 1  # Fator de espera exponencial
-RATE_LIMIT_DELAY = 0.3  # Delay entre requisições (segundos)
-CHECKPOINT_INTERVAL = 10  # Salvar checkpoint a cada N SKUs
+# --- PERFORMANCE AND SECURITY CONFIGURATION ---
+MAX_WORKERS = 3  # Parallel threads (adjust as needed)
+REQUEST_TIMEOUT = 30  # Timeout in seconds
+MAX_RETRIES = 3  # Retry attempts
+BACKOFF_FACTOR = 1  # Exponential backoff factor
+RATE_LIMIT_DELAY = 0.3  # Delay between requests (seconds)
+CHECKPOINT_INTERVAL = 10  # Save checkpoint every N SKUs
 
-# Lock para escrita thread-safe em arquivos
+# Lock for thread-safe writing to files
 log_lock = threading.Lock()
 
-# --- SESSÃO COM RETRY AUTOMÁTICO ---
+# --- SESSION WITH AUTOMATIC RETRY ---
 def create_session() -> requests.Session:
     """
-    Cria uma sessão com retry automático para lidar com falhas temporárias.
+    Creates a session with automatic retry to handle temporary failures.
     """
     session = requests.Session()
     
     retry_strategy = Retry(
         total=MAX_RETRIES,
         backoff_factor=BACKOFF_FACTOR,
-        status_forcelist=[429, 500, 502, 503, 504],  # Rate limit e erros de servidor
+        status_forcelist=[429, 500, 502, 503, 504],  # Rate limit and server errors
         allowed_methods=["GET", "PUT", "POST"]
     )
     
@@ -60,12 +60,12 @@ def create_session() -> requests.Session:
     
     return session
 
-# Sessão global reutilizável
+# Reusable global session
 SESSION = create_session()
 
 # --- UTILS ---
 def log_message(message: str, level: str = "INFO"):
-    """Log thread-safe com níveis de severidade."""
+    """Thread-safe logging with severity levels."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     formatted_msg = f"[{timestamp}] [{level}] {message}"
     
@@ -75,7 +75,7 @@ def log_message(message: str, level: str = "INFO"):
             with open(LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(formatted_msg + "\n")
             
-            # Erros vão para arquivo separado
+            # Errors go to a separate file
             if level in ["ERROR", "CRITICAL"]:
                 with open(ERROR_LOG, "a", encoding="utf-8") as f:
                     f.write(formatted_msg + "\n")
@@ -83,7 +83,7 @@ def log_message(message: str, level: str = "INFO"):
             print(f"Error writing log: {e}")
 
 def slugify(text: str) -> str:
-    """Gera slug URL-friendly."""
+    """Generates URL-friendly slug."""
     if not text:
         return ""
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
@@ -94,14 +94,14 @@ def slugify(text: str) -> str:
 
 # --- CHECKPOINT SYSTEM ---
 class CheckpointManager:
-    """Gerencia checkpoints para retomar processamento."""
+    """Manages checkpoints to resume processing."""
     
     def __init__(self, filename: str = CHECKPOINT_FILE):
         self.filename = filename
         self.data = self.load()
     
     def load(self) -> Dict:
-        """Carrega checkpoint existente."""
+        """Loads existing checkpoint."""
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, 'r') as f:
@@ -111,7 +111,7 @@ class CheckpointManager:
         return {"processed_skus": [], "last_page": 1}
     
     def save(self):
-        """Salva checkpoint."""
+        """Saves checkpoint."""
         with log_lock:
             try:
                 with open(self.filename, 'w') as f:
@@ -120,26 +120,26 @@ class CheckpointManager:
                 log_message(f"Error saving checkpoint: {e}", "ERROR")
     
     def mark_processed(self, sku_id: int):
-        """Marca SKU como processado."""
+        """Marks SKU as processed."""
         if sku_id not in self.data["processed_skus"]:
             self.data["processed_skus"].append(sku_id)
     
     def is_processed(self, sku_id: int) -> bool:
-        """Verifica se SKU já foi processado."""
+        """Checks if SKU has already been processed."""
         return sku_id in self.data["processed_skus"]
     
     def update_page(self, page: int):
-        """Atualiza última página processada."""
+        """Updates the last processed page."""
         self.data["last_page"] = page
     
     def clear(self):
-        """Limpa checkpoint."""
+        """Clears checkpoint."""
         self.data = {"processed_skus": [], "last_page": 1}
         self.save()
 
 # --- RATE LIMITER ---
 class RateLimiter:
-    """Controla taxa de requisições."""
+    """Controls request rate."""
     
     def __init__(self, delay: float = RATE_LIMIT_DELAY):
         self.delay = delay
@@ -147,7 +147,7 @@ class RateLimiter:
         self.lock = threading.Lock()
     
     def wait(self):
-        """Aguarda antes de fazer próxima requisição."""
+        """Waits before making the next request."""
         with self.lock:
             elapsed = time.time() - self.last_request
             if elapsed < self.delay:
@@ -159,7 +159,7 @@ rate_limiter = RateLimiter()
 # --- API FUNCTIONS ---
 def safe_request(method: str, url: str, **kwargs) -> Optional[requests.Response]:
     """
-    Faz requisição com rate limiting, timeout e tratamento de erros.
+    Makes a request with rate limiting, timeout, and error handling.
     """
     rate_limiter.wait()
     
@@ -169,7 +169,7 @@ def safe_request(method: str, url: str, **kwargs) -> Optional[requests.Response]
         
         response = SESSION.request(method, url, **kwargs)
         
-        # Tratamento específico de rate limit
+        # Specific rate limit handling
         if response.status_code == 429:
             retry_after = int(response.headers.get('Retry-After', 60))
             log_message(f"Rate limit hit. Waiting {retry_after}s...", "WARNING")
@@ -189,7 +189,7 @@ def safe_request(method: str, url: str, **kwargs) -> Optional[requests.Response]
         return None
 
 def update_image_alt(sku_id: int, original_image_data: Dict, new_alt_text: str) -> bool:
-    """Atualiza alt text da imagem."""
+    """Updates the image alt text."""
     file_id = original_image_data.get('Id')
     url = f"{BASE_URL}/stockkeepingunit/{sku_id}/file/{file_id}"
     
@@ -211,7 +211,7 @@ def update_image_alt(sku_id: int, original_image_data: Dict, new_alt_text: str) 
         return False
 
 def process_sku_images(sku_id: int, product_name: str) -> bool:
-    """Processa todas as imagens de um SKU."""
+    """Processes all images for a SKU."""
     url_get = f"{BASE_URL}/stockkeepingunit/{sku_id}/file"
     
     response = safe_request('GET', url_get)
@@ -225,7 +225,7 @@ def process_sku_images(sku_id: int, product_name: str) -> bool:
         if not images:
             return True
 
-        # Verifica se TODAS as imagens já têm alt text
+        # Checks if ALL images already have alt text
         all_have_alt = all(
             img.get('Label') and img.get('Label').strip() 
             for img in images
@@ -257,7 +257,7 @@ def process_sku_images(sku_id: int, product_name: str) -> bool:
         return False
 
 def get_sku_details(sku_id: int) -> Tuple[Optional[str], Optional[str]]:
-    """Obtém detalhes do SKU."""
+    """Retrieves SKU details."""
     url = f"{BASE_URL}/stockkeepingunit/{sku_id}"
     
     response = safe_request('GET', url)
@@ -271,7 +271,7 @@ def get_sku_details(sku_id: int) -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 def process_single_sku(sku_id: int, checkpoint: CheckpointManager) -> bool:
-    """Processa um único SKU."""
+    """Processes a single SKU."""
     if checkpoint.is_processed(sku_id):
         log_message(f"SKU {sku_id} already processed (checkpoint)", "INFO")
         return True
@@ -279,7 +279,7 @@ def process_single_sku(sku_id: int, checkpoint: CheckpointManager) -> bool:
     product_name, ref_id = get_sku_details(sku_id)
     
     if product_name:
-        log_message(f"SKU ID: {sku_id} | RefId: {ref_id} | Produto: {product_name}")
+        log_message(f"SKU ID: {sku_id} | RefId: {ref_id} | Product: {product_name}")
         success = process_sku_images(sku_id, product_name)
         
         if success:
@@ -292,7 +292,7 @@ def process_single_sku(sku_id: int, checkpoint: CheckpointManager) -> bool:
 
 # --- RUNNER ---
 def run_bulk_update(resume: bool = True):
-    """Executa atualização em massa com processamento paralelo."""
+    """Executes bulk update with parallel processing."""
     checkpoint = CheckpointManager()
     
     if not resume:
@@ -327,7 +327,7 @@ def run_bulk_update(resume: bool = True):
                 
                 log_message(f"\n--- Processing Page {page} ({len(sku_ids)} SKUs) ---")
                 
-                # Processamento paralelo com ThreadPoolExecutor
+                # Parallel processing with ThreadPoolExecutor
                 with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                     futures = {
                         executor.submit(process_single_sku, sku_id, checkpoint): sku_id 
@@ -337,7 +337,7 @@ def run_bulk_update(resume: bool = True):
                     for future in as_completed(futures):
                         processed_count += 1
                         
-                        # Salvar checkpoint periodicamente
+                        # Save checkpoint periodically
                         if processed_count % CHECKPOINT_INTERVAL == 0:
                             checkpoint.save()
                             log_message(f"Checkpoint saved ({processed_count} SKUs processed)")
@@ -364,8 +364,8 @@ def run_bulk_update(resume: bool = True):
 
 # --- MAIN ---
 if __name__ == "__main__":
-    if "COLE_SEU" in VTEX_COOKIE:
-        print("⚠️ ALERTA: Cole o cookie na variável VTEX_COOKIE.")
+    if "PASTE_YOUR_COOKIE_HERE" in VTEX_COOKIE:
+        print("⚠️ ALERT: Paste your cookie in the VTEX_COOKIE variable.")
     else:
         print("=" * 60)
         print("VTEX IMAGE ALT TEXT UPDATER - ROBUST VERSION")
